@@ -1,0 +1,149 @@
+---
+title: "DBS vs DNA"
+author: "Manuel García Ulloa Cabeza"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(corrplot)
+library(GGally)
+library(ggsignif)
+library(summarytools)
+library(gridExtra)
+```
+
+
+# 0.- Data Preprocessing
+
+```{r}
+# Load the data
+data <- read.csv("locus_sequenced__and_sample_type.csv")
+
+# Log transformation of OLD_Parasitemia and NEW_Parasitemia
+data <- data %>%
+  mutate(OLD_Parasitemia_log = log(OLD_Parasitemia, base = 10),
+         NEW_Parasitemia_log = log(NEW_Parasitemia, base = 10))
+
+# Remove rows where OLD_Parasitemia or NEW_Parasitemia are NA
+data <- data %>%
+  filter(!is.na(OLD_Parasitemia) & !is.na(NEW_Parasitemia) & is.finite(OLD_Parasitemia_log) & is.finite(NEW_Parasitemia_log))
+
+# Subset the data to the relevant columns
+data_subset <- data %>%
+  select(sample, locus_sequenced, read_counts, OLD_Parasitemia_log, NEW_Parasitemia_log) 
+
+# Filter data for DBS and DNA samples
+dbs_data <- data_subset %>% filter(sample == "DBS")
+dna_data <- data_subset %>% filter(sample == "DNA")
+
+```
+
+
+# 1.- Summary of variables
+
+```{r}
+# Display summaries for dbs_data and dna_data
+print(dfSummary(dbs_data[,-1]), method = "render")
+print(dfSummary(dna_data[,-1]), method = "render")
+```
+
+
+# 2.- Correlations
+
+```{r}
+# Compute correlation matrices for DBS and DNA samples
+cormatrix_dbs <- cor(dbs_data[,-1], 
+                     method = "spearman", use = "complete.obs")
+
+cormatrix_dna <- cor(dna_data[,-1], 
+                     method = "spearman", use = "complete.obs")
+
+# Set up the layout for side-by-side plots
+par(mfrow = c(1, 2))  # 1 row, 2 columns
+
+# Plot the correlation matrix for DBS
+corrplot(cormatrix_dbs, method = "square", type = "lower", tl.cex = 0.8, 
+         tl.col = "black", addCoef.col = "black", number.cex = 0.7)
+
+# Add title for DBS
+title(main = "DBS", line = 2)  # Adjust 'line' to move title closer/further
+
+# Plot the correlation matrix for DNA
+corrplot(cormatrix_dna, method = "square", type = "lower", tl.cex = 0.8, 
+         tl.col = "black", addCoef.col = "black", number.cex = 0.7)
+
+# Add title for DNA
+title(main = "DNA", line = 2)  # Adjust 'line' to move title closer/further
+
+# Reset the layout to default (1 plot at a time)
+par(mfrow = c(1, 1))
+```
+
+```{r}
+# Create a function to generate pairwise scatterplots for each sample group
+plot_gpairs_by_sample <- function(sample_group) {
+  # Filter data for the specific sample group
+  sample_data <- data_subset %>%
+    filter(sample == sample_group)
+
+  # Custom function for lower plots to apply theme and alpha
+  custom_lower_plot <- function(data, mapping, ...) {
+    ggplot(data, mapping) +
+      geom_point(alpha = 0.3) + 
+      geom_smooth(method = "lm", col = "blue", se = FALSE)
+  }
+
+  # Generate the pairwise scatterplot matrix for the group
+  ggpairs(sample_data[, -1],   # Exclude the 'sample' column
+          lower = list(continuous = custom_lower_plot),  # Use custom function
+          diag = list(continuous = "densityDiag"),
+          upper = list(continuous = wrap("cor", method = "spearman")),
+          title = paste("Pairwise Scatterplots for", sample_group))
+}
+
+# Generate pairwise scatterplots for each sample group (DBS and DNA)
+ggpairs_dbs <- plot_gpairs_by_sample("DBS")
+ggpairs_dna <- plot_gpairs_by_sample("DNA")
+
+# Suppress messages and warnings when displaying the plots
+suppressMessages(suppressWarnings(print(ggpairs_dbs)))
+suppressMessages(suppressWarnings(print(ggpairs_dna)))
+
+
+```
+
+
+# 3.- Median Differences
+
+```{r}
+# Function to create boxplots and perform Wilcoxon test
+create_boxplot <- function(data, variable) {
+  p <- suppressWarnings(
+    ggplot(data, aes_string(x = "sample", y = variable, fill = "sample")) +
+      geom_boxplot() +
+      geom_signif(comparisons = list(c("DBS", "DNA")), 
+                  map_signif_level = TRUE, test = "wilcox.test") +
+      labs(title = "", x = "", y = variable) +
+      theme_minimal() +
+      guides(fill = "none")
+  )
+
+  return(p)
+}
+
+# Generate boxplots for each variable
+boxplot_locus_sequenced <- create_boxplot(data_subset, "locus_sequenced")
+boxplot_read_counts <- create_boxplot(data_subset, "read_counts")
+boxplot_old_parasitemia <- create_boxplot(data_subset, "OLD_Parasitemia_log")
+boxplot_new_parasitemia <- create_boxplot(data_subset, "NEW_Parasitemia_log")
+
+grid.arrange(boxplot_locus_sequenced, boxplot_read_counts, 
+             boxplot_old_parasitemia, boxplot_new_parasitemia, 
+             ncol = 4)
+
+```
