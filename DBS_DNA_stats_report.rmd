@@ -98,10 +98,16 @@ plot_gpairs_by_sample <- function(sample_group) {
       geom_smooth(method = "lm", col = "blue", se = FALSE)
   }
 
+  # Define a custom diagonal plot function to show histograms with 10 bins
+custom_diag_hist <- function(data, mapping, ...) {
+  ggplot(data, mapping) + 
+    geom_histogram(bins = 10,  fill = "skyblue", alpha = 0.7)
+}
+  
   # Generate the pairwise scatterplot matrix for the group
   ggpairs(sample_data[, -1],   # Exclude the 'sample' column
           lower = list(continuous = custom_lower_plot),  # Use custom function
-          diag = list(continuous = "densityDiag"),
+          diag = list(continuous = custom_diag_hist),
           upper = list(continuous = wrap("cor", method = "spearman")),
           title = paste("Pairwise Scatterplots for", sample_group))
 }
